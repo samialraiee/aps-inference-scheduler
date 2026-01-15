@@ -10,7 +10,7 @@
 
 In cloud AI services, multiple tenants compete for GPU resources. Without proper scheduling, high-volume tenants can starve low-volume ones, leading to unfair service and wasted capacity. Traditional FIFO queues don't account for business priorities or prevent resource monopolization.
 
-**We built this because:** Enterprise customers pay premiums for priority service, but open-source schedulers lacked the sophistication to handle complex tenant relationships while maintaining high GPU utilization.
+**I built this because:** Enterprise customers pay premiums for priority service, but open-source schedulers lacked the sophistication to handle complex tenant relationships while maintaining high GPU utilization.
 
 ## The Architecture
 
