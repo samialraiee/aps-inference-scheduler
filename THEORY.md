@@ -1,6 +1,6 @@
 # Technical Note: Entropic Stabilization in Asynchronous Inference Clusters
 
-**Author**: APS Research Group  
+**Author**: Muhamad Sami Ur Rahman 
 **Date**: January 19, 2026  
 **Keywords**: Complex Adaptive Systems, Shannon Entropy, GPU Scheduling, Homeostatic Control
 
