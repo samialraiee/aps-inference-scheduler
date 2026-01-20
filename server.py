@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI):
     # STARTUP CODE
     default_tenants = [
         TenantConfig(tenant_id=f"tenant_{i:02d}", rate_limit=500.0 + (i * 50), burst_cap=5000 + (i * 500))
-        for i in range(20)
+        for i in range(50)
     ]
     
     for tenant in default_tenants:

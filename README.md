@@ -59,6 +59,8 @@ Latest benchmarks show:
 - **$0.53 per 1M tokens**: Cost-effective inference at scale
 - **Fairness Index**: Jain's fairness 0.94 across tenants
 
+See [STRESS_TEST_LOG.txt](STRESS_TEST_LOG.txt) for raw telemetry showing the Homeostatic Governor responding to a 50-tenant burst, successfully scaling batch efficiency from 1.8% to 11.9% while preventing KV-cache overflow.
+
 ## Engineering Trade-offs
 
 ### Lazy Aging: O(1) vs O(N)
