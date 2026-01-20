@@ -1,4 +1,4 @@
-# APS Inference Engine
+# APS-Inference: A Complex Adaptive System for GPU Scheduling
 
 A high-performance, multi-tenant inference engine that prevents starvation through Adaptive Priority Scheduling (APS) and micro-batching on simulated A100 GPUs.
 
