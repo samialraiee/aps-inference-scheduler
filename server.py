@@ -16,11 +16,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from models import Request, TenantConfig, InferenceResponse, HeapEntry, make_heap_entry
 from tenant_manager import TenantManager
 from gpu_simulator import GPUSimulator
+from homeostatic_governor import HomeostaticGovernor
 
 
 # Global state
 tenant_manager = TenantManager()
 gpu_simulator = GPUSimulator()
+governor = HomeostaticGovernor()
 request_queue: list[HeapEntry] = []
 queue_lock = asyncio.Lock()
 
@@ -37,10 +39,14 @@ accepted_requests = 0
 rejected_requests = 0
 
 
-async def worker(priority_queue: list[HeapEntry], queue_lock: asyncio.Lock, gpu_simulator):
+async def worker(
+    priority_queue: list[HeapEntry],
+    queue_lock: asyncio.Lock,
+    gpu_simulator,
+    governor: HomeostaticGovernor,
+):
     MAX_BATCH = 16
     MAX_KV = 32768
-    BATCH_WINDOW = 0.010  # 10ms
 
     while True:
         # Get first item (highest priority) — this is the only time we pay for re-evaluation
@@ -56,7 +62,8 @@ async def worker(priority_queue: list[HeapEntry], queue_lock: asyncio.Lock, gpu_
 
         # Start micro-batching window
         batch = [first_req]
-        await asyncio.sleep(BATCH_WINDOW)
+        batch_window = governor.get_adaptive_batch_window()
+        await asyncio.sleep(batch_window)
 
         # Now grab as many as possible — again, only pay cost when popping
         async with queue_lock:
@@ -68,8 +75,10 @@ async def worker(priority_queue: list[HeapEntry], queue_lock: asyncio.Lock, gpu_
         # Efficiency calculation
         used_kv = sum(r.tokens_requested for r in batch)
         efficiency = used_kv / MAX_KV
-        print(f"Batch size={len(batch):2d} | efficiency={efficiency:5.1%} | "
-              f"used={used_kv:5,d}/{MAX_KV:,}")
+        print(
+            f"Batch size={len(batch):2d} | efficiency={efficiency:5.1%} | "
+            f"used={used_kv:5,d}/{MAX_KV:,} | window={batch_window*1000:5.2f} ms"
+        )
 
         # Process!
         result = await gpu_simulator.simulate_inference(batch)
@@ -84,21 +93,24 @@ async def worker(priority_queue: list[HeapEntry], queue_lock: asyncio.Lock, gpu_
 async def lifespan(app: FastAPI):
     # STARTUP CODE
     default_tenants = [
-        TenantConfig(tenant_id="tenant_a", rate_limit=500.0, burst_cap=5000),
-        TenantConfig(tenant_id="tenant_b", rate_limit=300.0, burst_cap=3000),
-        TenantConfig(tenant_id="tenant_c", rate_limit=1000.0, burst_cap=10000),
+        TenantConfig(tenant_id=f"tenant_{i:02d}", rate_limit=500.0 + (i * 50), burst_cap=5000 + (i * 500))
+        for i in range(20)
     ]
     
     for tenant in default_tenants:
         tenant_manager.register_tenant(tenant)
     
     # Start background worker
-    worker_task = asyncio.create_task(worker(request_queue, queue_lock, gpu_simulator))
+    worker_task = asyncio.create_task(
+        worker(request_queue, queue_lock, gpu_simulator, governor)
+    )
     
     print("[Server] Multi-Tenant AI Inference Scheduler started")
     print(f"[Server] GPU Simulator: A100 (Prefill={GPUSimulator.PREFILL_THROUGHPUT} t/s, "
           f"Decode={GPUSimulator.DECODE_THROUGHPUT} t/s)")
-    print(f"[Server] Batching: Max {MAX_BATCH_SIZE} requests, {BATCH_WAIT_MS}ms wait")
+    print(
+        f"[Server] Batching: Max {MAX_BATCH_SIZE} requests, base {governor.base_batch_window*1000:.1f}ms, entropy-adaptive"
+    )
     print(f"[Server] Registered {len(default_tenants)} default tenants")
     
     yield  # Server runs here
@@ -149,6 +161,7 @@ async def infer(request: Request) -> InferenceResponse:
         heap_entry = make_heap_entry(request)
         
         async with queue_lock:
+            governor.record_arrival()
             heapq.heappush(request_queue, heap_entry)
         
         accepted_requests += 1
@@ -246,6 +259,9 @@ async def get_metrics():
         "cost_per_1M_tokens_usd": round(cost_per_million_tokens, 4),
         "jains_fairness_index": round(jains_index, 4),
         "active_tenants_tracked": len(tenant_stats),
+        "arrival_entropy": round(governor.current_entropy, 4),
+        "adaptive_batch_window_ms": round(governor.get_adaptive_batch_window() * 1000, 3),
+        "system_status": governor.get_system_status(),
         "timestamp": time.time(),
     }
 

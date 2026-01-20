@@ -6,22 +6,51 @@ A high-performance, multi-tenant inference engine that prevents starvation throu
 
 In multi-tenant LLM serving, traditional FIFO queues suffer from head-of-line blocking where low-priority, long-running requests starve high-priority, short requests. This creates unfair resource allocation and poor user experience, especially under high load.
 
-## The Architecture
+## The Architecture: A Complex Adaptive System
 
-### Adaptive Priority Scheduling (APS)
-- **Priority Queue**: Uses a min-heap with negative priority values for max-heap behavior
-- **Dynamic Aging**: Requests gain priority over time to prevent starvation
-- **Lazy Aging**: Updates priority only on dequeue (O(1) vs O(N) heapify)
+This inference engine embodies principles from systems science and complex adaptive systems theory. Rather than static resource policies, we employ **negative feedback mechanisms** and **phase-transition prevention** to maintain stability under varying load.
 
-### Micro-Batching
-- **Batch Window**: 10ms window for request accumulation
-- **Max Batch Size**: 16 requests per batch
-- **KV Cache Management**: 32K token limit per batch
+### Lazy Aging: O(1) Resource Governance
+
+Effective priority is computed lazily—only at dequeue time—avoiding the O(N log N) cost of heap restructuring on every aging tick. This protocol achieves **asymptotic complexity of O(1)** per aging event while maintaining priority correctness.
+
+**Formula**: Let $t_a$ denote arrival time and $\tau$ the current wall-clock time. Effective priority decays over age:
+
+$$P_{\text{eff}}(r) = P_{\text{bid}} + \alpha \cdot (t - t_a)$$
+
+By deferring this calculation until heap access, we eliminate O(N) heapify operations, enabling thousand-concurrent-request scales on commodity hardware.
+
+### Homeostatic Governor: Entropy-Driven Feedback Loop
+
+The core innovation is an **entropic feedback mechanism** that prevents phase transitions into congestion. We measure Shannon entropy $H$ of request inter-arrival intervals:
+
+$$H = -\sum_i p_i \log_2(p_i)$$
+
+where $p_i$ is the fraction of intervals in bin $i$ (1ms granularity). Based on entropy, the micro-batching window adapts:
+
+$$w_{\text{adaptive}} = w_{\text{base}} \cdot \exp\left(-\frac{H}{5.0}\right)$$
+
+**Feedback mechanism:**
+- **Low entropy** ($H < 1.5$): Patterned arrivals → wider window → exploit batching efficiency
+- **High entropy** ($H > 2.5$): Chaotic bursts → narrower window → drain queue faster, prevent congestion
+
+This creates a **negative feedback loop**: when chaos emerges, the window shrinks automatically, reducing latency and preventing cascade failures—a hallmark of self-regulating adaptive systems (Wiener, 1948).
+
+### Token Bucket Rate Limiting
+
+Per-tenant token buckets enforce resource allocation while permitting burst capacity:
+
+- **Rate limit**: $R$ tokens/second
+- **Burst cap**: $B$ maximum accumulated tokens
+- **Fairness**: Prevents monopolization while preserving request diversity
 
 ### A100 GPU Simulation
+
 - **Prefill Phase**: 1024 tokens/sec parallel processing
 - **Decode Phase**: 128 tokens/sec sequential generation
 - **Cost Model**: $3.00/hour A100 cost
+
+---
 
 ## The Results
 
